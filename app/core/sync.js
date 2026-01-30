@@ -151,6 +151,28 @@ class Sync extends EventEmitter {
         }
       }
 
+      // Pre-fetch all parent info for this batch of files
+      const parentIds = new Set();
+      for (let file of fileQueue) {
+        if (file.parents) {
+          for (let parent of file.parents) {
+            if (this._needsParentFetch(parent)) {
+              parentIds.add(parent);
+            }
+          }
+        }
+      }
+      
+      // Batch fetch parent info if needed
+      if (parentIds.size > 0) {
+        const batchResults = await this.getFileInfoBatch(Array.from(parentIds));
+        batchResults.forEach((parentInfo, parentId) => {
+          if (parentInfo) {
+            this.parentInfoCache.set(parentId, parentInfo);
+          }
+        });
+      }
+
       let results = fileQueue.map(
         async (file) => {
           if (this.shouldIgnoreFile(file)) {
@@ -863,6 +885,11 @@ class Sync extends EventEmitter {
     return await this.tryTwice(getChunk);
   }
 
+  /* Helper to check if parent info needs to be fetched (not in cache or fileInfo) */
+  _needsParentFetch(parentId) {
+    return !this.parentInfoCache.has(parentId) && !(parentId in this.fileInfo);
+  }
+
   async getPaths(fileInfo) {
     if (fileInfo === null) {
       return [];
@@ -877,15 +904,38 @@ class Sync extends EventEmitter {
 
     let ret = [];
 
+    // Collect all parent IDs that need to be fetched
+    const parentsToFetch = [];
     for (let parent of fileInfo.parents) {
-      // Check cache first for parent info
+      if (this._needsParentFetch(parent)) {
+        parentsToFetch.push(parent);
+      }
+    }
+
+    // Batch fetch all parents if there are any to fetch
+    if (parentsToFetch.length > 0) {
+      const batchResults = await this.getFileInfoBatch(parentsToFetch);
+      batchResults.forEach((parentInfo, parentId) => {
+        if (parentInfo) {
+          this.parentInfoCache.set(parentId, parentInfo);
+        }
+      });
+    }
+
+    // Now process all parents (all should be cached)
+    for (let parent of fileInfo.parents) {
       let parentInfo;
       if (this.parentInfoCache.has(parent)) {
         parentInfo = this.parentInfoCache.get(parent);
-      } else {
-        parentInfo = await this.getFileInfo(parent);
-        // Cache the parent info for future use
+      } else if (parent in this.fileInfo) {
+        parentInfo = this.fileInfo[parent];
         this.parentInfoCache.set(parent, parentInfo);
+      } else {
+        // Fallback to individual fetch (should be rare)
+        parentInfo = await this.getFileInfo(parent);
+        if (parentInfo) {
+          this.parentInfoCache.set(parent, parentInfo);
+        }
       }
       
       for (let parentPath of await this.getPaths(parentInfo)) {
@@ -983,6 +1033,58 @@ class Sync extends EventEmitter {
     return await fn();
   }
 
+  /* Batch get file info for multiple file IDs.
+     Uses individual requests but fetches in parallel for efficiency.
+     Returns a Map of fileId -> fileInfo (or null for 404s or errors) */
+  async getFileInfoBatch(fileIds) {
+    const results = new Map();
+    
+    // Filter out IDs already in cache
+    const idsToFetch = fileIds.filter(id => !(id in this.fileInfo));
+    
+    if (idsToFetch.length === 0) {
+      // All IDs are cached
+      fileIds.forEach(id => results.set(id, this.fileInfo[id]));
+      return results;
+    }
+
+    // Fetch all missing IDs in parallel with allSettled for partial success handling
+    const fetchPromises = idsToFetch.map(async (fileId) => {
+      try {
+        const fileInfo = await this.getFileInfo(fileId);
+        return { fileId, fileInfo, success: true };
+      } catch (err) {
+        // Handle 404s gracefully (consistent with getFileInfo)
+        if (err.code == 404) {
+          return { fileId, fileInfo: null, success: true };
+        }
+        // Log other errors but continue with batch
+        error(`Failed to fetch file info for ${fileId}:`, err.message);
+        return { fileId, fileInfo: null, success: false };
+      }
+    });
+
+    const settledResults = await Promise.allSettled(fetchPromises);
+    
+    // Build results map from settled promises
+    settledResults.forEach((result) => {
+      if (result.status === 'fulfilled' && result.value.success) {
+        const { fileId, fileInfo } = result.value;
+        results.set(fileId, fileInfo);
+      }
+      // Rejected promises or unsuccessful fetches are skipped
+    });
+    
+    // Add cached items to results
+    fileIds.forEach(id => {
+      if (!results.has(id) && id in this.fileInfo) {
+        results.set(id, this.fileInfo[id]);
+      }
+    });
+
+    return results;
+  }
+
   /* Gets file info from fileId.
 
     If the file info is not present in cache or if forceUpdate is true,
@@ -1049,6 +1151,31 @@ class Sync extends EventEmitter {
       }
     } else {
       debug("Computing empty paths");
+      
+      // Collect all parent IDs that will be needed
+      const allParentIds = new Set();
+      for (let info of Object.values(this.fileInfo)) {
+        if (info.parents) {
+          for (let parent of info.parents) {
+            if (this._needsParentFetch(parent)) {
+              allParentIds.add(parent);
+            }
+          }
+        }
+      }
+      
+      // Batch fetch all parent info upfront if there are any to fetch
+      if (allParentIds.size > 0) {
+        debug(`Batch fetching ${allParentIds.size} parent info entries`);
+        const batchResults = await this.getFileInfoBatch(Array.from(allParentIds));
+        batchResults.forEach((parentInfo, parentId) => {
+          if (parentInfo) {
+            this.parentInfoCache.set(parentId, parentInfo);
+          }
+        });
+      }
+      
+      // Now compute paths for all files
       for (let info of Object.values(this.fileInfo)) {
         await this.computePaths(info);
       }
