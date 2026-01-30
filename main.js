@@ -29,7 +29,9 @@ function createWindow () {
     height: os.platform() === "win32" ? 260 : 250,
     icon: logo,
     webPreferences: {
-      nodeIntegration: true
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'app', 'assets', 'javascript', 'preload.js')
     },
     'use-content-size': true
   });

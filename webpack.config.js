@@ -4,7 +4,7 @@ const webpack = require('webpack');
 const path = require("path");
 
 module.exports = {
-  mode: 'development',
+  mode: process.env.NODE_ENV === 'production' ? 'production' : 'development',
   context: path.resolve(__dirname, 'app/assets'),
   entry: {
     //teambuilder: "./javascript/teambuilder.js",
@@ -14,7 +14,7 @@ module.exports = {
     path: path.resolve(__dirname, "public/"),
     filename: "javascript/[name].js"
   },
-  devtool: "source-map",
+  devtool: process.env.NODE_ENV === 'production' ? false : "source-map",
   module: {
     rules: [
       {

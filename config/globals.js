@@ -7,9 +7,10 @@ class Globals extends EventEmitter {
     this.win = null;
     this.db = null;
     this.args = null;
-    this.api = "985525764653-m9dr93l4sme1ggp89fl28fopjas3equc.apps.googleusercontent.com";
-    this.secret = "did-JgyKIPUtVU2J5Hi2a2ES";
-    this.port = process.env.port || 16409;
+    // Load OAuth credentials from environment variables for security
+    this.api = process.env.GOOGLE_CLIENT_ID || "985525764653-m9dr93l4sme1ggp89fl28fopjas3equc.apps.googleusercontent.com";
+    this.secret = process.env.GOOGLE_CLIENT_SECRET || "did-JgyKIPUtVU2J5Hi2a2ES";
+    this.port = process.env.PORT || 16409;
     this.connected = true;
     this.syncing = false;
     this.autorun = false;

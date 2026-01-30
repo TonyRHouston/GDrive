@@ -128,7 +128,7 @@ class Account extends EventEmitter {
 
   onTokensReceived(tokens) {
     this.tokens = tokens;
-    console.log(tokens);
+    console.log("OAuth tokens received successfully");
 
     this.oauth.setCredentials(tokens);
     this.drive = google.google.drive({

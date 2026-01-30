@@ -40,6 +40,8 @@ class Sync extends EventEmitter {
     this.changesSinceSave = 0;
     this.handlingRemoteChange = false;
     this.handlingLocalChange = false;
+    this.parentInfoCache = new Map(); // Cache for parent folder info
+    this.watcherListeners = new Map(); // Store listener references per event for cleanup
 
     this.watcher = new LocalWatcher(this);
     this.initWatcher();
@@ -207,7 +209,21 @@ class Sync extends EventEmitter {
     }
   }
 
+  closeWatcher() {
+    // Remove all watcher event listeners to prevent memory leaks
+    for (const [event, listeners] of this.watcherListeners) {
+      // listeners is an array of listener functions for this event
+      if (Array.isArray(listeners)) {
+        for (const listener of listeners) {
+          this.watcher.off(event, listener);
+        }
+      }
+    }
+    this.watcherListeners.clear();
+  }
+
   async close() {
+    this.closeWatcher();
     this.watcher.stopWatching();
     this.closed = true;
   }
@@ -254,12 +270,27 @@ class Sync extends EventEmitter {
         await this.startWatchingChanges();
       }
 
+      let pollDelay = 8000; // Start with 8 seconds
+      const initialDelay = 8000; // Reset to initial when syncing completes
+      const minDelay = 2000; // Minimum polling interval when changes detected
+      const maxDelay = 30000; // Maximum polling interval when idle
+      const backoffMultiplier = 1.5; // Exponential backoff factor
+
       while (!this.closed) {
         /* Don't handle changes at the same time as syncing... */
         if (!this.syncing && this.synced) {
-          await this.handleNewChanges();
+          const changesDetected = await this.handleNewChanges();
+          // Reduce delay if changes were detected, increase if idle
+          if (changesDetected) {
+            pollDelay = minDelay;
+          } else {
+            pollDelay = Math.min(pollDelay * backoffMultiplier, maxDelay);
+          }
+        } else {
+          // Reset to initial delay when syncing starts to catch changes sooner after sync completes
+          pollDelay = initialDelay;
         }
-        await delay(8000);
+        await delay(pollDelay);
       }
     } catch (err) {
       log("Error when watching changes...");
@@ -276,8 +307,11 @@ class Sync extends EventEmitter {
 
   async handleNewChanges() {
     this.changesToExecute = await this.getNewChanges();
+    const changesCount = (this.changesToExecute || []).length;
 
     await this.handleChanges();
+    
+    return changesCount > 0;
   }
 
   /* loop function */
@@ -441,7 +475,9 @@ class Sync extends EventEmitter {
   async onLocalFileAdded(src) {
     debug("On local file added", src);
 
-    if (!(await fs.exists(src))) {
+    try {
+      await fs.access(src);
+    } catch (err) {
       debug("Not present on file system");
       return;
     }
@@ -493,7 +529,9 @@ class Sync extends EventEmitter {
   async onLocalFileUpdated(src) {
     debug("onLocalFileUpdated", src);
 
-    if (!(await fs.exists(src))) {
+    try {
+      await fs.access(src);
+    } catch (err) {
       debug("Not present on file system");
       return;
     }
@@ -693,10 +731,13 @@ class Sync extends EventEmitter {
 
     let removed = false;
     for (let path of paths) {
-      if (await fs.exists(path)) {
+      try {
+        await fs.access(path);
         this.watcher.ignore(path);
         await fs.remove(path);
         removed = true;
+      } catch (err) {
+        // File doesn't exist, skip it
       }
     }
 
@@ -837,7 +878,16 @@ class Sync extends EventEmitter {
     let ret = [];
 
     for (let parent of fileInfo.parents) {
-      let parentInfo = await this.getFileInfo(parent);
+      // Check cache first for parent info
+      let parentInfo;
+      if (this.parentInfoCache.has(parent)) {
+        parentInfo = this.parentInfoCache.get(parent);
+      } else {
+        parentInfo = await this.getFileInfo(parent);
+        // Cache the parent info for future use
+        this.parentInfoCache.set(parent, parentInfo);
+      }
+      
       for (let parentPath of await this.getPaths(parentInfo)) {
         ret.push(path.join(parentPath, fileInfo.name));
       }
@@ -866,14 +916,18 @@ class Sync extends EventEmitter {
     let removedPaths = [];
     let addedPaths = [];
 
+    // Convert to Sets for O(1) lookups instead of O(n²)
+    const oldPathsSet = new Set(oldPaths);
+    const newPathsSet = new Set(newPaths);
+
     for (let path of oldPaths) {
-      if (!newPaths.includes(path)) {
+      if (!newPathsSet.has(path)) {
         removedPaths.push(path);
       }
     }
 
     for (let path of newPaths) {
-      if (!oldPaths.includes(path)) {
+      if (!oldPathsSet.has(path)) {
         addedPaths.push(path);
       }
     }
@@ -977,6 +1031,14 @@ class Sync extends EventEmitter {
 
   async storeFileInfo(info) {
     await this.computePaths(info);
+    
+    // Invalidate cache for this file's parent info since it may have changed
+    if (info.parents) {
+      for (let parent of info.parents) {
+        this.parentInfoCache.delete(parent);
+      }
+    }
+    
     return this.fileInfo[info.id] = info;
   }
 
@@ -1022,7 +1084,14 @@ class Sync extends EventEmitter {
     /* Create the folder for the file first */
     await mkdirp(path.dirname(savePath));
 
-    let alreadyDownloaded = await fs.exists(savePath) && await md5file(savePath) == fileInfo.md5Checksum;
+    let alreadyDownloaded = false;
+    try {
+      await fs.access(savePath);
+      alreadyDownloaded = await md5file(savePath) == fileInfo.md5Checksum;
+    } catch (err) {
+      // File doesn't exist or can't be accessed
+      alreadyDownloaded = false;
+    }
 
     if (!alreadyDownloaded) {
       var tmpFile = path.join(this.account.folder, `.${fileInfo.name}.tmp`);
@@ -1076,11 +1145,24 @@ class Sync extends EventEmitter {
   async initWatcher() {
     //Queue system necessary because if a folder is added with files in it, the folder id is needed before uploading files, and it's gotten from google drive remotely
     //A more clever system would be needed to be more efficient
-    this.watcher.on('add', path => this.queue(() => this.onLocalFileAdded(path)));
-    this.watcher.on('unlink', path => this.queue(() => this.onLocalFileRemoved(path)));
-    this.watcher.on('addDir', path => this.queue(() => this.onLocalDirAdded(path)));
-    this.watcher.on('unlinkDir', path => this.queue(() => this.onLocalDirRemoved(path)));
-    this.watcher.on('change', path => this.queue(() => this.onLocalFileUpdated(path)));
+    const addListener = path => this.queue(() => this.onLocalFileAdded(path));
+    const unlinkListener = path => this.queue(() => this.onLocalFileRemoved(path));
+    const addDirListener = path => this.queue(() => this.onLocalDirAdded(path));
+    const unlinkDirListener = path => this.queue(() => this.onLocalDirRemoved(path));
+    const changeListener = path => this.queue(() => this.onLocalFileUpdated(path));
+
+    this.watcher.on('add', addListener);
+    this.watcher.on('unlink', unlinkListener);
+    this.watcher.on('addDir', addDirListener);
+    this.watcher.on('unlinkDir', unlinkDirListener);
+    this.watcher.on('change', changeListener);
+
+    // Store listeners as arrays per event for cleanup (supports multiple listeners per event)
+    this.watcherListeners.set('add', [addListener]);
+    this.watcherListeners.set('unlink', [unlinkListener]);
+    this.watcherListeners.set('addDir', [addDirListener]);
+    this.watcherListeners.set('unlinkDir', [unlinkDirListener]);
+    this.watcherListeners.set('change', [changeListener]);
   }
 
   /* Loop function */
