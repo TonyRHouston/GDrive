@@ -33,7 +33,8 @@ class LocalWatcher extends EventEmitter {
 
   async startWatching() {
     /* Todo: first detect any file deleted */
-    if (await fs.exists(this.sync.folder)) {
+    try {
+      await fs.access(this.sync.folder);
       let paths = Object.keys(this.sync.paths);
 
       /* Make sure folder paths appear before subpaths */
@@ -46,12 +47,21 @@ class LocalWatcher extends EventEmitter {
           continue;
         }
 
-        if (this.sync.locallyRegistered(path) && !await fs.exists(path)) {
+        let pathExists = true;
+        try {
+          await fs.access(path);
+        } catch (err) {
+          pathExists = false;
+        }
+
+        if (this.sync.locallyRegistered(path) && !pathExists) {
           this.sync.unregisterLocalFile(path);
           this.addCache(path, 'unlink');
           log(`${path} not detected locally, scheduling for unlink`);
         }
       }
+    } catch (err) {
+      // Folder doesn't exist, skip file deletion check
     }
 
     this.watcher = chokidar.watch(this.folder, {

@@ -9,13 +9,13 @@ const globals = require('../../config/globals');
 let accounts = null;
 let db = new DataStore({
   filename: path.join(os.homedir(), ".config/odrive/db", "global.db"),
-  autoload: true
+  autoload: true,
+  // Enable automatic compaction every 30 seconds
+  // This is more efficient than manually calling loadDatabase()
+  autoCompactionInterval: 30000
 });
 
 globals.db = db;
-
-//Autocompaction, since nedb-promise doesn't let us access it immediately
-setInterval(() => db.loadDatabase(), 30000);
 
 class Core extends EventEmitter {
   constructor() {
