@@ -20,7 +20,7 @@
     "file-loader": "^5.0.2",
     "font-awesome": "^4.7.0",
     "fs-extra": "^11.3.2",
-    "googleapis": "^160.0.0",
+    "googleapis": "^171.0.0",
     "jquery": "^4.0.0",
     "md5-file": "^5.0.0",
     "mkdirp-promise": "^5.0.1",
