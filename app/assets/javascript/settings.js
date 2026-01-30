@@ -1,5 +1,4 @@
 /* global $ */
-const ipc = require('electron').ipcRenderer;
 
 // eslint-disable-next-line no-unused-vars
 function beginSynchronization(account) {
@@ -7,7 +6,7 @@ function beginSynchronization(account) {
 
   UIBeginSyncing();
 
-  ipc.send('start-sync', {accountId:account.id, folder: account.folder});
+  window.electronAPI.startSync({accountId:account.id, folder: account.folder});
 }
 
 function UIBeginSyncing() {
@@ -19,7 +18,7 @@ function UIBeginSyncing() {
 // eslint-disable-next-line no-unused-vars
 function permanentlyDeleteSetting(account, checked) {
   account.permanentlyDeleteSetting = checked;
-  ipc.send('permanently-delete-setting', { accountId: account.id, permanentlyDeleteSetting: checked });
+  window.electronAPI.permanentlyDeleteSetting({ accountId: account.id, permanentlyDeleteSetting: checked });
 }
 
 /* React to folder change. Only change folder in current window, will send to backend when beginning synchronization */
@@ -36,20 +35,20 @@ function handleUIChangeFolder(account) {
 }
 
 // eslint-disable-next-line no-unused-vars
-ipc.on('sync-update', ({sender}, arg) => {
+window.electronAPI.onSyncUpdate(({sender}, arg) => {
   console.log(arg);
   let { update } = arg;
   $("#synchronize-status").text(update);
 });
 
-ipc.on('sync-end', () => {
+window.electronAPI.onSyncEnd(() => {
   $("#synchronize-icon").removeClass();
   $("#synchronize-icon").addClass("fa fa-download");
   $("#synchronize-text").text('Synchronize');
   $("#synchronize-button").prop("disabled", true);
 });
 
-ipc.on('sync-enable', () => {
+window.electronAPI.onSyncEnable(() => {
   $("#synchronize-icon").removeClass();
   $("#synchronize-icon").addClass("fa fa-download");
   $("#synchronize-text").text('Synchronize');
@@ -57,7 +56,7 @@ ipc.on('sync-enable', () => {
 });
 
 // eslint-disable-next-line no-unused-vars
-ipc.on('error', ({sender}, message) => {
+window.electronAPI.onError(({sender}, message) => {
   console.log(message);
   $("#synchronize-status").text('Error: ' + message);
 });
