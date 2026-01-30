@@ -156,7 +156,7 @@ class Sync extends EventEmitter {
       for (let file of fileQueue) {
         if (file.parents) {
           for (let parent of file.parents) {
-            if (!this.parentInfoCache.has(parent) && !(parent in this.fileInfo)) {
+            if (this._needsParentFetch(parent)) {
               parentIds.add(parent);
             }
           }
@@ -885,20 +885,9 @@ class Sync extends EventEmitter {
     return await this.tryTwice(getChunk);
   }
 
-  /* Collect all parent IDs needed for a file's path resolution */
-  _collectParentIds(fileInfo, collected = new Set()) {
-    if (!fileInfo || !fileInfo.parents || fileInfo.id === this.rootId) {
-      return collected;
-    }
-
-    for (let parent of fileInfo.parents) {
-      if (!collected.has(parent) && !this.parentInfoCache.has(parent) && !(parent in this.fileInfo)) {
-        collected.add(parent);
-        // Note: Can't recursively collect here without the parent info
-      }
-    }
-
-    return collected;
+  /* Helper to check if parent info needs to be fetched (not in cache or fileInfo) */
+  _needsParentFetch(parentId) {
+    return !this.parentInfoCache.has(parentId) && !(parentId in this.fileInfo);
   }
 
   async getPaths(fileInfo) {
@@ -918,7 +907,7 @@ class Sync extends EventEmitter {
     // Collect all parent IDs that need to be fetched
     const parentsToFetch = [];
     for (let parent of fileInfo.parents) {
-      if (!this.parentInfoCache.has(parent) && !(parent in this.fileInfo)) {
+      if (this._needsParentFetch(parent)) {
         parentsToFetch.push(parent);
       }
     }
@@ -944,7 +933,9 @@ class Sync extends EventEmitter {
       } else {
         // Fallback to individual fetch (should be rare)
         parentInfo = await this.getFileInfo(parent);
-        this.parentInfoCache.set(parent, parentInfo);
+        if (parentInfo) {
+          this.parentInfoCache.set(parent, parentInfo);
+        }
       }
       
       for (let parentPath of await this.getPaths(parentInfo)) {
@@ -1044,7 +1035,7 @@ class Sync extends EventEmitter {
 
   /* Batch get file info for multiple file IDs.
      Uses individual requests but fetches in parallel for efficiency.
-     Returns a Map of fileId -> fileInfo (or null for 404s) */
+     Returns a Map of fileId -> fileInfo (or null for 404s or errors) */
   async getFileInfoBatch(fileIds) {
     const results = new Map();
     
@@ -1057,25 +1048,31 @@ class Sync extends EventEmitter {
       return results;
     }
 
-    // Fetch all missing IDs in parallel
+    // Fetch all missing IDs in parallel with allSettled for partial success handling
     const fetchPromises = idsToFetch.map(async (fileId) => {
       try {
         const fileInfo = await this.getFileInfo(fileId);
-        return { fileId, fileInfo };
+        return { fileId, fileInfo, success: true };
       } catch (err) {
-        // Handle 404s gracefully
-        if (err.code === 404) {
-          return { fileId, fileInfo: null };
+        // Handle 404s gracefully (consistent with getFileInfo)
+        if (err.code == 404) {
+          return { fileId, fileInfo: null, success: true };
         }
-        throw err;
+        // Log other errors but continue with batch
+        error(`Failed to fetch file info for ${fileId}:`, err.message);
+        return { fileId, fileInfo: null, success: false };
       }
     });
 
-    const fetchedResults = await Promise.all(fetchPromises);
+    const settledResults = await Promise.allSettled(fetchPromises);
     
-    // Build results map
-    fetchedResults.forEach(({ fileId, fileInfo }) => {
-      results.set(fileId, fileInfo);
+    // Build results map from settled promises
+    settledResults.forEach((result) => {
+      if (result.status === 'fulfilled' && result.value.success) {
+        const { fileId, fileInfo } = result.value;
+        results.set(fileId, fileInfo);
+      }
+      // Rejected promises or unsuccessful fetches are skipped
     });
     
     // Add cached items to results
@@ -1160,7 +1157,7 @@ class Sync extends EventEmitter {
       for (let info of Object.values(this.fileInfo)) {
         if (info.parents) {
           for (let parent of info.parents) {
-            if (!this.parentInfoCache.has(parent) && !(parent in this.fileInfo)) {
+            if (this._needsParentFetch(parent)) {
               allParentIds.add(parent);
             }
           }
