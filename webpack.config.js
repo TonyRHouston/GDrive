@@ -20,18 +20,16 @@ module.exports = {
       {
         test: /\.css$/,
         use: [
-          { loader: MiniCssExtractPlugin.loader },
-          { loader: "style-loader" },
-          { loader: "css-loader" },
-          { loader: "resolve-url-loader" },
-        ],
+           { loader: MiniCssExtractPlugin.loader },
+           { loader: "css-loader" },
+           { loader: "resolve-url-loader" },
+         ],
       },
       {
         test: /\.scss$/,
         use: [
          { loader: MiniCssExtractPlugin.loader,options: {
            publicPath: './',
-           reloadAll: true,
 			}, 
          },
           { loader: "css-loader" },
@@ -57,26 +55,28 @@ module.exports = {
     ]
   },
   plugins: [
-    new CopyWebpackPlugin([{
-      context: __dirname,
-      from: "node_modules/jquery/dist/jquery.min.js",
-      to: "javascript"
-    }, {
-      context: __dirname,
-      from: "node_modules/tether/dist/js/tether.min.js",
-      to: "javascript"
-    }, {
-      from: "javascript/preload.js", to: "javascript"
-    }, {
-      from: "javascript/settings.js", to: "javascript"
-    }]),
+    new CopyWebpackPlugin({
+      patterns: [{
+        context: __dirname,
+        from: "node_modules/jquery/dist/jquery.min.js",
+        to: "javascript"
+      }, {
+        context: __dirname,
+        from: "node_modules/tether/dist/js/tether.min.js",
+        to: "javascript"
+      }, {
+        from: "javascript/preload.js", to: "javascript"
+      }, {
+        from: "javascript/settings.js", to: "javascript"
+      }]
+    }),
     new webpack.ProvidePlugin({
       $: 'jquery', jquery: 'jquery', jQuery: 'jquery',
       "window.Tether": 'tether', "Popper": "popper.js"
     }),
     //new MiniCssExtractPlugin("assets/stylesheets/styles.css")
       new MiniCssExtractPlugin({
-      filename: '/app/assets/stylesheets/styles.css',
+      filename: 'app/assets/stylesheets/styles.css',
     })
   ],
   externals: {

@@ -87,6 +87,12 @@ To make sure the code is ok and run some sanity checks on it:
 npm test
 ```
 
+## Security / Roadmap
+
+- Security policy: `SECURITY.md`
+- Security changes: `SECURITY_IMPROVEMENTS.md`
+- Audit & overhaul outline: `OVERHAUL_OUTLINE.md`
+
 ## Deployment
 
 ### Releases
