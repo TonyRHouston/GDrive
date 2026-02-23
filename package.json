@@ -35,7 +35,7 @@
   "devDependencies": {
     "copy-webpack-plugin": "^13.0.1",
     "css-loader": "^7.1.4",
-    "electron": "^8.0.1",
+    "electron": "^40.6.0",
     "electron-builder": "^26.0.12",
     "electron-packager": "^14.1.1",
     "eslint": "^10.0.1",
