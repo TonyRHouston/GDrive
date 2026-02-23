@@ -36,13 +36,13 @@ class DataStore {
     });
   }
 
-  update(query, update, options) {
+  update(query, update, options = {}) {
     return new Promise((resolve, reject) => {
       this._db.update(query, update, options, (err, numAffected) => err ? reject(err) : resolve(numAffected));
     });
   }
 
-  remove(query, options) {
+  remove(query, options = {}) {
     return new Promise((resolve, reject) => {
       this._db.remove(query, options, (err, numRemoved) => err ? reject(err) : resolve(numRemoved));
     });
@@ -50,4 +50,3 @@ class DataStore {
 }
 
 module.exports = DataStore;
-

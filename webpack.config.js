@@ -20,11 +20,10 @@ module.exports = {
       {
         test: /\.css$/,
         use: [
-          { loader: MiniCssExtractPlugin.loader },
-          { loader: "style-loader" },
-          { loader: "css-loader" },
-          { loader: "resolve-url-loader" },
-        ],
+           { loader: MiniCssExtractPlugin.loader },
+           { loader: "css-loader" },
+           { loader: "resolve-url-loader" },
+         ],
       },
       {
         test: /\.scss$/,
