@@ -3,7 +3,7 @@ const path = require('path');
 const EventEmitter = require('events');
 
 const Account = require('./account');
-const DataStore = require('nedb-promise');
+const DataStore = require('./db');
 const globals = require('../../config/globals');
 
 let accounts = null;

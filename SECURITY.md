@@ -2,20 +2,17 @@
 
 ## Supported Versions
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
+This project is an Electron desktop application. Security fixes are provided on a best-effort basis for:
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+- The **latest release**
+- The current **default branch**
+
+Older releases are not guaranteed to receive security backports.
 
 ## Reporting a Vulnerability
 
-Use this section to tell people how to report a vulnerability.
+Please **do not** open a public GitHub issue for security reports.
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+Instead, use GitHub's **"Report a vulnerability"** feature (Security Advisories) so we can coordinate a private fix and responsible disclosure.
+
+If you must include sensitive information (tokens, OAuth client details, logs), redact them first.
